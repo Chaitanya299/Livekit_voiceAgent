@@ -19,7 +19,7 @@ class Assistant(Agent):
 async def entrypoint(ctx: agents.JobContext):
     session = AgentSession(
         stt="deepgram/nova-3:en",
-        llm=mistralai.LLM(model="mistral-medium-latest"),
+        llm=mistralai.LLM(model="mistral-small-latest"),
         tts="elevenlabs/eleven_turbo_v2_5:Xb7hH8MSUJpSbSDYk0k2",
         vad=silero.VAD.load(),
         turn_detection=MultilingualModel(),
@@ -38,4 +38,7 @@ async def entrypoint(ctx: agents.JobContext):
     )
 
 if __name__ == "__main__":
-    agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint))
+    agents.cli.run_app(agents.WorkerOptions(
+        entrypoint_fnc=entrypoint,
+        agent_name="in&out"
+    ))
