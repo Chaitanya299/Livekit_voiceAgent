@@ -1,0 +1,9 @@
+{
+  "trunk": {
+    "name": "My outbound trunk",
+    "address": "sip.telnyx.com",
+    "numbers": ["+17328633049"],        
+    "auth_username": "developer01",
+    "auth_password": "DevAcc0123"
+  }
+}

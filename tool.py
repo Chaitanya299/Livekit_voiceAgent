@@ -1,4 +1,10 @@
+import os
 import logging
+import asyncio
+from typing import Optional
+from pathlib import Path
+from dotenv import load_dotenv
+
 from livekit import api
 from livekit.agents import function_tool, RunContext, get_job_context
 
@@ -67,3 +73,75 @@ async def end_call(ctx: RunContext) -> str:
     except Exception as e:
         logger.error(f"Failed to end call: {e}", exc_info=True)
         return "error"
+
+
+async def make_call(phone_number: str, room_name: Optional[str] = None) -> bool:
+    """Make an outbound call to the specified phone number.
+    
+    Args:
+        phone_number: The phone number to call (include country code, e.g., +1234567890)
+        room_name: Optional room name. If not provided, a random one will be generated.
+        
+    Returns:
+        bool: True if the call was initiated successfully, False otherwise
+    """
+    logger = logging.getLogger("phone-assistant")
+    load_dotenv(Path(__file__).parent / '.env')
+    
+    # Get SIP trunk ID from environment
+    sip_trunk_id = os.getenv("SIP_OUTBOUND_TRUNK_ID")
+    if not sip_trunk_id or not sip_trunk_id.startswith("ST_"):
+        logger.error("SIP_OUTBOUND_TRUNK_ID is not set or invalid")
+        return False
+    
+    # Generate a room name if not provided
+    if not room_name:
+        room_name = f"outbound-call-{os.urandom(4).hex()}"
+    
+    lkapi = None
+    try:
+        lkapi = api.LiveKitAPI()
+        
+        # Create agent dispatch with phone number as metadata
+        logger.info(f"Creating dispatch in room {room_name} for {phone_number}")
+        dispatch = await lkapi.agent_dispatch.create_dispatch(
+            api.CreateAgentDispatchRequest(
+                agent_name="in&out",  # Must match the agent_name in agent.py
+                room=room_name,
+                metadata=phone_number  # This will be available as ctx.metadata in the agent
+            )
+        )
+        logger.info(f"Created dispatch: {dispatch}")
+
+        # Create SIP participant to make the call
+        logger.info(f"Dialing {phone_number} to room {room_name}")
+        sip_participant = await lkapi.sip.create_sip_participant(
+            api.CreateSIPParticipantRequest(
+                room_name=room_name,
+                sip_trunk_id=sip_trunk_id,
+                sip_call_to=phone_number,
+                participant_identity=f"phone-{phone_number}"
+            )
+        )
+        logger.info(f"Created SIP participant: {sip_participant}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error during outbound call: {e}", exc_info=True)
+        return False
+    finally:
+        if lkapi:
+            await lkapi.aclose()
+
+@function_tool
+async def initiate_call(phone_number: str) -> str:
+    """Initiate an outbound call to the specified phone number.
+    
+    Args:
+        phone_number: The phone number to call (include country code, e.g., +1234567890)
+        
+    Returns:
+        str: Status message indicating success or failure
+    """
+    success = await make_call(phone_number)
+    return "Call initiated successfully" if success else "Failed to initiate call"
