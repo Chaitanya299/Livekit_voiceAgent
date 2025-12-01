@@ -6,4 +6,5 @@ dependencies = [
     "livekit-agents[mistralai,silero,turn-detector]~=1.2",
     "livekit-plugins-noise-cancellation~=0.2",
     "python-dotenv>=1.2.1",
+    "phonenumbers>=8.13.0",
 ]

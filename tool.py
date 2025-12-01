@@ -1,9 +1,11 @@
 import os
 import logging
 import asyncio
+import phonenumbers
 from typing import Optional
 from pathlib import Path
 from dotenv import load_dotenv
+from phonenumbers import NumberParseException
 
 from livekit import api
 from livekit.agents import function_tool, RunContext, get_job_context
@@ -75,6 +77,27 @@ async def end_call(ctx: RunContext) -> str:
         return "error"
 
 
+def normalize_phone(raw: str, default_region: str = "IN") -> Optional[str]:
+    """Validate and normalize a phone number to E.164 format.
+    
+    Args:
+        raw: The raw phone number string to validate
+        default_region: Default region code (ISO 3166-1 alpha-2) for numbers without country code
+        
+    Returns:
+        str: Normalized phone number in E.164 format, or None if invalid
+    """
+    try:
+        parsed = phonenumbers.parse(raw, default_region)
+        if phonenumbers.is_valid_number(parsed):
+            return phonenumbers.format_number(
+                parsed, 
+                phonenumbers.PhoneNumberFormat.E164
+            )
+    except NumberParseException:
+        pass
+    return None
+
 async def make_call(phone_number: str, room_name: Optional[str] = None) -> bool:
     """Make an outbound call to the specified phone number.
     
@@ -87,6 +110,12 @@ async def make_call(phone_number: str, room_name: Optional[str] = None) -> bool:
     """
     logger = logging.getLogger("phone-assistant")
     load_dotenv(Path(__file__).parent / '.env')
+    
+    # Validate and normalize the phone number
+    normalized_number = normalize_phone(phone_number)
+    if not normalized_number:
+        logger.error(f"Invalid phone number: {phone_number}")
+        return False
     
     # Get SIP trunk ID from environment
     sip_trunk_id = os.getenv("SIP_OUTBOUND_TRUNK_ID")
@@ -102,25 +131,25 @@ async def make_call(phone_number: str, room_name: Optional[str] = None) -> bool:
     try:
         lkapi = api.LiveKitAPI()
         
-        # Create agent dispatch with phone number as metadata
-        logger.info(f"Creating dispatch in room {room_name} for {phone_number}")
+        # Create agent dispatch with normalized phone number as metadata
+        logger.info(f"Creating dispatch in room {room_name} for {normalized_number}")
         dispatch = await lkapi.agent_dispatch.create_dispatch(
             api.CreateAgentDispatchRequest(
                 agent_name="in&out",  # Must match the agent_name in agent.py
                 room=room_name,
-                metadata=phone_number  # This will be available as ctx.metadata in the agent
+                metadata=normalized_number  # Use the normalized number
             )
         )
         logger.info(f"Created dispatch: {dispatch}")
 
         # Create SIP participant to make the call
-        logger.info(f"Dialing {phone_number} to room {room_name}")
+        logger.info(f"Dialing {normalized_number} to room {room_name}")
         sip_participant = await lkapi.sip.create_sip_participant(
             api.CreateSIPParticipantRequest(
                 room_name=room_name,
                 sip_trunk_id=sip_trunk_id,
-                sip_call_to=phone_number,
-                participant_identity=f"phone-{phone_number}"
+                sip_call_to=normalized_number,
+                participant_identity=f"phone-{normalized_number}"
             )
         )
         logger.info(f"Created SIP participant: {sip_participant}")
